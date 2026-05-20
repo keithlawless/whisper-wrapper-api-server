@@ -105,6 +105,12 @@ See `src/whisper_wrapper/schemas.py` for the full response shapes.
 
 Override with `--model-cache-dir`. Sizes: `tiny` ~75MB, `base` ~145MB, `small` ~460MB, `medium` ~1.5GB, `large-v3` ~3GB.
 
+The following model name aliases are accepted in API requests and resolved to their canonical name:
+
+| Alias | Resolves to |
+|---|---|
+| `large` | `large-v3` |
+
 **mlx-whisper** models download via HuggingFace Hub to `~/.cache/huggingface/hub` (or `$HF_HOME/hub`). Model sizes are similar to above.
 
 ## Distribution
