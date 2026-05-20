@@ -6,7 +6,7 @@ from pathlib import Path
 
 from whisper_wrapper.backends import detect_backend
 from whisper_wrapper.backends.base import Transcriber
-from whisper_wrapper.config import SUPPORTED_MODELS, Settings
+from whisper_wrapper.config import MODEL_ALIASES, SUPPORTED_MODELS, Settings
 from whisper_wrapper.errors import ModelDownloadError, ModelNotAvailableError
 from whisper_wrapper.logging import get_logger
 
@@ -109,6 +109,7 @@ class ModelManager:
 
     async def get(self, size: str) -> Transcriber:
         """Return a loaded Transcriber for `size`, loading if needed."""
+        size = MODEL_ALIASES.get(size, size)
         self._validate(size)
         existing = self._models.get(size)
         if existing is not None:
@@ -167,10 +168,10 @@ class ModelManager:
             raise ModelDownloadError(f"no MLX model repo configured for size '{size}'")
         # Download model weights to HF hub cache now so the first transcribe is fast.
         try:
+            import mlx.core as mx  # type: ignore
             import mlx_whisper.load_models as lm  # type: ignore
-            import mlx  # type: ignore
 
-            lm.load_model(repo, dtype=mlx.float16)
+            lm.load_model(repo, dtype=mx.float16)
         except Exception as e:
             raise ModelDownloadError(
                 f"failed to load MLX model '{size}' from {repo}: {e}"

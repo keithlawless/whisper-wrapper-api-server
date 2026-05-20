@@ -9,6 +9,11 @@ from platformdirs import user_data_dir
 from whisper_wrapper import SERVICE_NAME
 
 SUPPORTED_MODELS = ("tiny", "base", "small", "medium", "large-v3")
+
+# Aliases accepted in API requests, resolved before validation.
+MODEL_ALIASES: dict[str, str] = {
+    "large": "large-v3",
+}
 DEFAULT_PORT = 8765
 DEFAULT_HOST = "127.0.0.1"
 
