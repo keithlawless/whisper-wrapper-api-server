@@ -1,0 +1,89 @@
+stages:
+  - lint
+  - test
+  - build
+  - release
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  HF_HUB_DISABLE_PROGRESS_BARS: "1"
+
+.python_base: &python_base
+  image: python:3.11-slim
+  before_script:
+    - python -V
+    - pip install --upgrade pip
+    - pip install -e ".[dev]"
+  cache:
+    paths:
+      - .cache/pip
+
+lint:
+  <<: *python_base
+  stage: lint
+  script:
+    - ruff check src tests
+
+test:
+  <<: *python_base
+  stage: test
+  script:
+    - pytest -q
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+    expire_in: 1 week
+
+# --- Build matrix -----------------------------------------------------------
+#
+# Each build job runs on a platform-specific runner and produces a single
+# PyInstaller binary as a GitLab job artifact. Tag your runners with
+# `whisper-wrapper-<os>-<arch>` to match.
+
+.build_base: &build_base
+  stage: build
+  script:
+    - pip install --upgrade pip
+    - pip install -e ".[dev]"
+    - python tools/build_release.py
+  artifacts:
+    paths:
+      - dist/whisper-wrapper-*
+    expire_in: 1 month
+
+build:linux-x86_64:
+  <<: *build_base
+  image: python:3.11-bullseye
+  tags: [linux, x86_64]
+
+build:macos-arm64:
+  <<: *build_base
+  tags: [macos, arm64]
+
+build:macos-x86_64:
+  <<: *build_base
+  tags: [macos, x86_64]
+
+build:windows-x86_64:
+  <<: *build_base
+  tags: [windows, x86_64]
+
+# --- Release ----------------------------------------------------------------
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  needs:
+    - build:linux-x86_64
+    - build:macos-arm64
+    - build:macos-x86_64
+    - build:windows-x86_64
+  script:
+    - echo "Publishing release $CI_COMMIT_TAG"
+  release:
+    name: "whisper-wrapper $CI_COMMIT_TAG"
+    tag_name: "$CI_COMMIT_TAG"
+    description: "Automated release of whisper-wrapper $CI_COMMIT_TAG. Binaries are attached as job artifacts."
