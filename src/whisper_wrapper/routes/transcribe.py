@@ -30,10 +30,20 @@ async def transcribe(
     audio: UploadFile = File(...),  # noqa: B008
     model: str | None = Form(default=None),
     language: str | None = Form(default=None),
+    # VAD
     vad: bool = Form(default=True),
+    vad_threshold: float = Form(default=0.5),
+    vad_min_speech_ms: int = Form(default=250),
+    vad_min_silence_ms: int = Form(default=100),
+    vad_speech_pad_ms: int = Form(default=150),
+    # Audio pre-processing
+    normalize: bool = Form(default=True),
+    pad_silence: bool = Form(default=True),
+    # Model parameters
     word_timestamps: bool = Form(default=False),
     initial_prompt: str | None = Form(default=None),
     temperature: float = Form(default=0.0),
+    no_speech_threshold: float = Form(default=0.8),
     format: str | None = Form(default=None),
 ) -> TranscribeResponse:
     settings = _settings(request)
@@ -53,11 +63,19 @@ async def transcribe(
     )
     audio_mod.enforce_max_duration(decoded)
 
+    if normalize:
+        decoded = audio_mod.normalize(decoded)
+
     vad_applied = False
     if vad:
-        decoded, vad_applied = await asyncio.to_thread(vad_mod.apply, decoded)
-
-    duration = audio_mod.duration_seconds(decoded)
+        decoded, vad_applied = await asyncio.to_thread(
+            vad_mod.apply,
+            decoded,
+            threshold=vad_threshold,
+            min_speech_ms=vad_min_speech_ms,
+            min_silence_ms=vad_min_silence_ms,
+            speech_pad_ms=vad_speech_pad_ms,
+        )
 
     if decoded.size == 0:
         return TranscribeResponse(
@@ -71,6 +89,12 @@ async def transcribe(
             request_id=request_id,
         )
 
+    # Measure real audio duration before appending synthetic silence.
+    duration = audio_mod.duration_seconds(decoded)
+
+    if pad_silence:
+        decoded = audio_mod.pad_silence(decoded)
+
     transcriber = await mgr.get(model_size)
 
     log.info(
@@ -80,6 +104,9 @@ async def transcribe(
         language=language,
         duration_sec=round(duration, 2),
         vad_applied=vad_applied,
+        normalize=normalize,
+        pad_silence=pad_silence,
+        no_speech_threshold=no_speech_threshold,
     )
 
     async with mgr.semaphore:
@@ -90,6 +117,7 @@ async def transcribe(
             word_timestamps=word_timestamps,
             initial_prompt=initial_prompt,
             temperature=temperature,
+            no_speech_threshold=no_speech_threshold,
         )
 
     log.info(

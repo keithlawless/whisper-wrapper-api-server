@@ -18,6 +18,7 @@ class FasterWhisperTranscriber(Transcriber):
         word_timestamps: bool,
         initial_prompt: str | None,
         temperature: float,
+        no_speech_threshold: float,
     ) -> TranscribeResult:
         segments_gen, info = self._model.transcribe(
             audio,
@@ -26,7 +27,7 @@ class FasterWhisperTranscriber(Transcriber):
             initial_prompt=initial_prompt,
             temperature=temperature,
             condition_on_previous_text=False,
-            no_speech_threshold=0.8,
+            no_speech_threshold=no_speech_threshold,
             vad_filter=False,
         )
         segments_raw = list(segments_gen)

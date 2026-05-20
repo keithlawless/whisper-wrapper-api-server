@@ -27,5 +27,6 @@ class Transcriber:
         word_timestamps: bool,
         initial_prompt: str | None,
         temperature: float,
+        no_speech_threshold: float,
     ) -> TranscribeResult:
         raise NotImplementedError

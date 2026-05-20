@@ -27,6 +27,7 @@ class MlxTranscriber(Transcriber):
         word_timestamps: bool,
         initial_prompt: str | None,
         temperature: float,
+        no_speech_threshold: float,
     ) -> TranscribeResult:
         import mlx_whisper  # lazy import so non-Apple platforms load cleanly
 
@@ -38,7 +39,7 @@ class MlxTranscriber(Transcriber):
             initial_prompt=initial_prompt,
             temperature=temperature,
             condition_on_previous_text=False,
-            no_speech_threshold=0.8,
+            no_speech_threshold=no_speech_threshold,
             verbose=None,
         )
 

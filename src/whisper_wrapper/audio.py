@@ -112,6 +112,18 @@ def decode(data: bytes, declared_format: str | None = None, filename: str | None
     return audio
 
 
+def normalize(audio: np.ndarray) -> np.ndarray:
+    """Peak-normalize to 1.0. Protects against quiet recordings that produce empty output."""
+    peak = np.abs(audio).max()
+    return audio / peak if peak > 0.0 else audio
+
+
+def pad_silence(audio: np.ndarray, seconds: float = 1.0) -> np.ndarray:
+    """Append silence so Whisper's decoder flushes the last segment on abrupt cut-offs."""
+    padding = np.zeros(round(seconds * TARGET_SR), dtype=np.float32)
+    return np.concatenate([audio, padding])
+
+
 def duration_seconds(audio: np.ndarray) -> float:
     return float(audio.shape[0]) / float(TARGET_SR)
 

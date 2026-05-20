@@ -42,7 +42,13 @@ def is_available() -> bool:
     return _model is not None and not _load_failed
 
 
-def apply(audio: np.ndarray, threshold: float = 0.5) -> tuple[np.ndarray, bool]:
+def apply(
+    audio: np.ndarray,
+    threshold: float = 0.5,
+    min_speech_ms: int = 250,
+    min_silence_ms: int = 100,
+    speech_pad_ms: int = 150,
+) -> tuple[np.ndarray, bool]:
     """Concatenate detected speech segments. Returns (filtered_audio, applied_bool).
 
     If VAD is unavailable, returns the original audio with applied=False.
@@ -64,8 +70,9 @@ def apply(audio: np.ndarray, threshold: float = 0.5) -> tuple[np.ndarray, bool]:
         _model,
         sampling_rate=TARGET_SR,
         threshold=threshold,
-        min_speech_duration_ms=250,
-        min_silence_duration_ms=100,
+        min_speech_duration_ms=min_speech_ms,
+        min_silence_duration_ms=min_silence_ms,
+        speech_pad_ms=speech_pad_ms,
     )
     if not timestamps:
         # All silence: return a tiny slice so the model doesn't crash on zero-len.
