@@ -22,7 +22,7 @@ async def health(request: Request) -> HealthResponse:
         service=SERVICE_NAME,
         version=__version__,
         api_version=API_VERSION,
-        backend="faster-whisper",
+        backend=mgr.backend_name(),
         loaded_models=mgr.loaded(),
         device=mgr.device(),
         compute_type=mgr.compute_type(),

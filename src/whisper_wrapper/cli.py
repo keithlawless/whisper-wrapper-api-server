@@ -36,6 +36,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--device", default=None, choices=["auto", "cpu", "cuda"])
     serve.add_argument("--auth-token", default=None)
+    serve.add_argument(
+        "--backend",
+        default=None,
+        choices=["auto", "faster-whisper", "mlx-whisper"],
+    )
     serve.add_argument("--log-level", default=None, choices=["debug", "info", "warning", "error"])
 
     dl = sub.add_parser("download", help="Pre-download a model and exit")
@@ -58,6 +63,7 @@ def _build_settings(args: argparse.Namespace) -> Settings:
         "max_concurrent",
         "compute_type",
         "device",
+        "backend",
         "auth_token",
         "log_level",
     ):

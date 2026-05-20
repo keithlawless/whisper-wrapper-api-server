@@ -27,6 +27,7 @@ class Settings:
     max_concurrent: int = 0  # 0 = auto (min(cpu, 4))
     compute_type: str = "int8"
     device: str = "auto"
+    backend: str = "auto"  # auto | faster-whisper | mlx-whisper
     auth_token: str | None = None
     log_level: str = "info"
 
@@ -53,6 +54,7 @@ def from_env() -> dict:
         "MAX_CONCURRENT": ("max_concurrent", int),
         "COMPUTE_TYPE": ("compute_type", str),
         "DEVICE": ("device", str),
+        "BACKEND": ("backend", str),
         "AUTH_TOKEN": ("auth_token", str),
         "LOG_LEVEL": ("log_level", str),
     }
