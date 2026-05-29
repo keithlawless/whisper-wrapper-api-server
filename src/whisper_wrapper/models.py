@@ -21,6 +21,8 @@ class ModelManager:
       - Loads are single-flight via per-size asyncio.Lock so two parallel
         first-requests don't double-download/double-load.
       - The semaphore caps how many transcribe calls run simultaneously.
+        The MLX backend (Metal) is not thread-safe, so concurrency is
+        forced to 1 there to avoid native SIGTRAP crashes.
     """
 
     def __init__(self, settings: Settings):
@@ -30,7 +32,18 @@ class ModelManager:
         )
         self._models: dict[str, Transcriber] = {}
         self._locks: dict[str, asyncio.Lock] = {}
-        self._semaphore = asyncio.Semaphore(settings.resolved_max_concurrent())
+        self._semaphore = asyncio.Semaphore(self.effective_max_concurrent())
+
+    def effective_max_concurrent(self) -> int:
+        """How many transcribe calls may run at once for the active backend.
+
+        mlx-whisper drives Metal, which is not thread-safe: concurrent
+        transcribe() calls from worker threads abort the process with a
+        SIGTRAP ("trace trap"). Serialize them by capping at 1.
+        """
+        if self._active_backend == "mlx-whisper":
+            return 1
+        return self._settings.resolved_max_concurrent()
 
     @property
     def semaphore(self) -> asyncio.Semaphore:

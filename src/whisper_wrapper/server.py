@@ -32,7 +32,7 @@ def create_app(settings: Settings) -> FastAPI:
             api_version=API_VERSION,
             host=settings.host,
             port=settings.port,
-            max_concurrent=settings.resolved_max_concurrent(),
+            max_concurrent=mgr.effective_max_concurrent(),
             model_cache_dir=str(settings.model_cache_dir),
         )
         if settings.preload:

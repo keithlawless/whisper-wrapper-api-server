@@ -78,6 +78,9 @@ def test_settings(tmp_model_cache: Path):
         max_concurrent=2,
         compute_type="int8",
         device="cpu",
+        # Pin the backend so tests are deterministic regardless of host
+        # hardware (auto-detect picks mlx-whisper on Apple Silicon).
+        backend="faster-whisper",
         log_level="warning",
     )
 
