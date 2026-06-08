@@ -122,6 +122,9 @@ def _cmd_version(_: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from whisper_wrapper.runtime import configure_tqdm_lock
+
+    configure_tqdm_lock()
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "serve":
