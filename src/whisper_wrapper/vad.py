@@ -10,6 +10,12 @@ from whisper_wrapper.logging import get_logger
 log = get_logger("vad")
 
 _lock = threading.Lock()
+# Serializes inference on the shared Silero JIT model. The model is a single
+# stateful torch.jit module (conv encoder + LSTM); running it from two worker
+# threads at once corrupts the heap and aborts the process with a native
+# "pointer being freed was not allocated" malloc error. apply() runs under
+# asyncio.to_thread for every request, so concurrent calls are the norm.
+_infer_lock = threading.Lock()
 _model = None  # silero-vad jit model
 _get_speech_timestamps = None
 _load_failed = False
@@ -65,15 +71,17 @@ def apply(
         return audio, False
 
     tensor = torch.from_numpy(audio.astype(np.float32, copy=False))
-    timestamps = _get_speech_timestamps(  # type: ignore[misc]
-        tensor,
-        _model,
-        sampling_rate=TARGET_SR,
-        threshold=threshold,
-        min_speech_duration_ms=min_speech_ms,
-        min_silence_duration_ms=min_silence_ms,
-        speech_pad_ms=speech_pad_ms,
-    )
+    # Serialize: the Silero model is shared and not thread-safe (see _infer_lock).
+    with _infer_lock:
+        timestamps = _get_speech_timestamps(  # type: ignore[misc]
+            tensor,
+            _model,
+            sampling_rate=TARGET_SR,
+            threshold=threshold,
+            min_speech_duration_ms=min_speech_ms,
+            min_silence_duration_ms=min_silence_ms,
+            speech_pad_ms=speech_pad_ms,
+        )
     if not timestamps:
         # All silence: return a tiny slice so the model doesn't crash on zero-len.
         return audio[:0], True
