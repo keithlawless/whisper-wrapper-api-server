@@ -1,7 +1,23 @@
 from __future__ import annotations
 
+import faulthandler
 import os
 import threading
+
+
+def enable_faulthandler() -> None:
+    """Dump every thread's Python stack to stderr on a native fault.
+
+    Native aborts inside CTranslate2 / PyTorch (heap corruption, access
+    violations) otherwise kill the interpreter silently — the process just
+    drops back to the shell prompt with no traceback. faulthandler installs
+    OS-level handlers (SIGSEGV/SIGABRT/SIGFPE/SIGBUS/SIGILL on POSIX, plus the
+    equivalent structured-exception handlers on Windows) that print where each
+    thread was before the process dies, so the next crash leaves a clue about
+    which worker was mid-inference. Idempotent.
+    """
+    if not faulthandler.is_enabled():
+        faulthandler.enable()
 
 
 def configure_tqdm_lock() -> None:

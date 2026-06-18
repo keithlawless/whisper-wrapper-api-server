@@ -37,11 +37,22 @@ class ModelManager:
     def effective_max_concurrent(self) -> int:
         """How many transcribe calls may run at once for the active backend.
 
-        mlx-whisper drives Metal, which is not thread-safe: concurrent
-        transcribe() calls from worker threads abort the process with a
-        SIGTRAP ("trace trap"). Serialize them by capping at 1.
+        Both shipping backends drive native, thread-unsafe inference, so
+        transcription is serialized to one call at a time:
+
+          - mlx-whisper (Metal) aborts with SIGTRAP ("trace trap") when two
+            transcribe() calls overlap on worker threads.
+          - faster-whisper (CTranslate2) corrupts the process heap when its
+            shared model is called from multiple worker threads at once. The
+            damage isn't immediately fatal: a later allocation trips over it
+            and the process aborts with no Python traceback. Observed on
+            Windows after 20-30h of bursty traffic, where two requests rarely
+            overlap at exactly the wrong instant.
+
+        Audio decode, normalization, and VAD run outside this gate and still
+        overlap freely, so only the model call itself is serialized.
         """
-        if self._active_backend == "mlx-whisper":
+        if self._active_backend in ("mlx-whisper", "faster-whisper"):
             return 1
         return self._settings.resolved_max_concurrent()
 
