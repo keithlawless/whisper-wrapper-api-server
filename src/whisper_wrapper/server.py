@@ -12,11 +12,14 @@ from whisper_wrapper.logging import configure as configure_logging
 from whisper_wrapper.logging import get_logger, install_middleware
 from whisper_wrapper.models import ModelManager
 from whisper_wrapper.routes import admin as admin_routes
+from whisper_wrapper.runtime import configure_tqdm_lock, enable_faulthandler
 from whisper_wrapper.routes import health as health_routes
 from whisper_wrapper.routes import transcribe as transcribe_routes
 
 
 def create_app(settings: Settings) -> FastAPI:
+    enable_faulthandler()
+    configure_tqdm_lock()
     configure_logging(settings.log_level)
     log = get_logger("server")
 
@@ -32,7 +35,7 @@ def create_app(settings: Settings) -> FastAPI:
             api_version=API_VERSION,
             host=settings.host,
             port=settings.port,
-            max_concurrent=settings.resolved_max_concurrent(),
+            max_concurrent=mgr.effective_max_concurrent(),
             model_cache_dir=str(settings.model_cache_dir),
         )
         if settings.preload:

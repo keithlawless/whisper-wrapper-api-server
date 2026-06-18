@@ -35,6 +35,40 @@ async def test_semaphore_caps_in_flight(tmp_model_cache) -> None:
     assert peak <= 2
 
 
+def test_mlx_backend_forces_serial_transcription(tmp_model_cache) -> None:
+    """MLX/Metal is not thread-safe; concurrency must be capped at 1.
+
+    Regression for the SIGTRAP ("trace trap") crash when two transcribe
+    requests overlapped on the mlx-whisper backend.
+    """
+    settings = Settings(
+        model_cache_dir=tmp_model_cache,
+        backend="mlx-whisper",
+        max_concurrent=4,
+    )
+    mgr = ModelManager(settings)
+    assert mgr.effective_max_concurrent() == 1
+    assert mgr.semaphore._value == 1
+
+
+def test_faster_whisper_forces_serial_transcription(tmp_model_cache) -> None:
+    """CTranslate2's shared model is not thread-safe; concurrency must be 1.
+
+    Regression for the silent native abort (heap corruption surfacing as a
+    Windows access violation) when two transcribe requests overlapped on the
+    faster-whisper backend after many hours of bursty traffic. max_concurrent
+    must not be able to lift in-flight transcriptions above 1.
+    """
+    settings = Settings(
+        model_cache_dir=tmp_model_cache,
+        backend="faster-whisper",
+        max_concurrent=3,
+    )
+    mgr = ModelManager(settings)
+    assert mgr.effective_max_concurrent() == 1
+    assert mgr.semaphore._value == 1
+
+
 @pytest.mark.asyncio
 async def test_model_manager_single_flight_lock(tmp_model_cache, monkeypatch) -> None:
     """Two concurrent get() calls for the same size must load the model once."""
