@@ -54,7 +54,9 @@ The active backend is reported in the `/health` response (`backend`, `device`, `
 
 Uses [CTranslate2](https://github.com/OpenNMT/CTranslate2) for quantised CPU/CUDA inference.  
 Default compute type is `int8` — ~4× smaller models, best CPU throughput, negligible accuracy impact for speech.  
-Supports CUDA if an NVIDIA GPU is present (`--device cuda`).
+Supports CUDA if an NVIDIA GPU is present. With `--device auto` (the default) the GPU is selected automatically when one is visible; force it with `--device cuda` or pin to `--device cpu`. For GPU inference pair it with `--compute-type float16`. A float16 compute type requested on a CPU device is automatically downgraded to `int8` (CTranslate2 cannot run float16 on CPU).
+
+> **Concurrency:** transcription is serialized to one in-flight call at a time. The CTranslate2 model is shared across requests and is not thread-safe — calling it from multiple worker threads corrupts the process heap and eventually aborts with no traceback (observed on Windows after ~20–30h). Audio decode and VAD still run concurrently; only the model call is gated.
 
 ### mlx-whisper (Apple Silicon)
 
@@ -71,9 +73,9 @@ whisper-wrapper serve [options]
   --model-cache-dir PATH      # where faster-whisper models are downloaded/cached
   --default-model base        # used when a request omits "model"
   --preload tiny,base         # models to load at startup
-  --max-concurrent N          # max parallel transcriptions (default: min(cpu, 4))
+  --max-concurrent N          # retained for compatibility; currently a no-op — model inference is always serialized (see Concurrency note above)
   --compute-type int8         # int8 | int8_float16 | float16 | float32 (faster-whisper only)
-  --device auto               # auto | cpu | cuda (faster-whisper only)
+  --device auto               # auto | cpu | cuda (faster-whisper only; auto picks CUDA when a GPU is present)
   --backend auto              # auto | faster-whisper | mlx-whisper
   --auth-token TOKEN          # required when host != 127.0.0.1/::1
   --log-level info            # debug | info | warning | error

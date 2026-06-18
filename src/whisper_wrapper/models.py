@@ -12,6 +12,10 @@ from whisper_wrapper.logging import get_logger
 
 log = get_logger("models")
 
+# CTranslate2 compute types that require float16-capable hardware. Requesting
+# any of these on a CPU device makes WhisperModel() raise at load time.
+_FLOAT16_COMPUTE_TYPES = frozenset({"float16", "int8_float16"})
+
 
 class ModelManager:
     """Lazy-loads Whisper models and gates parallel transcriptions.
@@ -32,6 +36,7 @@ class ModelManager:
         )
         self._models: dict[str, Transcriber] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._resolved_device: str | None = None
         self._semaphore = asyncio.Semaphore(self.effective_max_concurrent())
 
     def effective_max_concurrent(self) -> int:
@@ -67,16 +72,60 @@ class ModelManager:
     def backend_name(self) -> str:
         return self._active_backend
 
+    @staticmethod
+    def _cuda_available() -> bool:
+        """True if CTranslate2 can see a usable CUDA device.
+
+        Queried via CTranslate2 (not torch) because that is the runtime
+        faster-whisper actually dispatches to. Any failure — no GPU, missing
+        CUDA runtime, CTranslate2 built without CUDA — is treated as "no CUDA".
+        """
+        try:
+            import ctranslate2  # type: ignore
+
+            return ctranslate2.get_cuda_device_count() > 0
+        except Exception:
+            return False
+
     def device(self) -> str:
+        """Resolved compute device for the active backend.
+
+        For faster-whisper, ``device="auto"`` selects CUDA when a GPU is
+        visible (mirroring how mlx-whisper is auto-selected on Apple Silicon)
+        and falls back to CPU otherwise. The result is cached so detection
+        runs once per process.
+        """
         if self._active_backend == "mlx-whisper":
             return "apple-silicon"
-        d = self._settings.device
-        return d if d != "auto" else "cpu"
+        if self._resolved_device is None:
+            d = self._settings.device
+            if d != "auto":
+                self._resolved_device = d
+            else:
+                self._resolved_device = "cuda" if self._cuda_available() else "cpu"
+        return self._resolved_device
 
     def compute_type(self) -> str:
+        """Resolved CTranslate2 compute type, guarded against bad device pairs.
+
+        float16 compute types only work on GPU; CTranslate2 raises if they are
+        requested on CPU. When that mismatch is configured (e.g. ``--compute-type
+        float16`` without a CUDA device), downgrade to int8 with a warning
+        instead of crashing at model load.
+        """
         if self._active_backend == "mlx-whisper":
             return "float16"
-        return self._settings.compute_type
+        ct = self._settings.compute_type
+        if self.device() == "cpu" and ct in _FLOAT16_COMPUTE_TYPES:
+            log.warning(
+                "compute_type_downgraded",
+                requested=ct,
+                device="cpu",
+                using="int8",
+                reason="float16 compute requires a CUDA device",
+            )
+            return "int8"
+        return ct
 
     def supported(self) -> list[str]:
         return list(SUPPORTED_MODELS)
@@ -158,6 +207,10 @@ class ModelManager:
         )
         try:
             transcriber = self._load_backend(size)
+        except ModelDownloadError:
+            # Already a clear, actionable message — don't bury it in re-wrapping.
+            log.error("model_load_failed", size=size, backend=self._active_backend)
+            raise
         except Exception as e:
             log.error("model_load_failed", size=size, backend=self._active_backend, reason=str(e))
             raise ModelDownloadError(f"failed to load model '{size}': {e}") from e
@@ -176,12 +229,24 @@ class ModelManager:
 
         cache_dir = self._settings.model_cache_dir
         cache_dir.mkdir(parents=True, exist_ok=True)
-        model = WhisperModel(
-            size,
-            device=self._settings.device if self._settings.device != "auto" else "cpu",
-            compute_type=self._settings.compute_type,
-            download_root=str(cache_dir),
-        )
+        device = self.device()
+        compute_type = self.compute_type()
+        try:
+            model = WhisperModel(
+                size,
+                device=device,
+                compute_type=compute_type,
+                download_root=str(cache_dir),
+            )
+        except Exception as e:
+            if device == "cuda":
+                raise ModelDownloadError(
+                    f"failed to load '{size}' on CUDA ({compute_type}): {e}. Ensure the "
+                    "NVIDIA CUDA runtime and cuDNN libraries are installed and on PATH — "
+                    "CTranslate2 requires them for GPU inference — or start with "
+                    "--device cpu."
+                ) from e
+            raise
         return FasterWhisperTranscriber(model)
 
     def _load_mlx(self, size: str) -> Transcriber:
