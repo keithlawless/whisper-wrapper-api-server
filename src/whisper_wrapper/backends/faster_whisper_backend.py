@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from whisper_wrapper.backends.base import Transcriber, TranscribeResult
+from whisper_wrapper.backends.base import (
+    COMPRESSION_RATIO_THRESHOLD,
+    LOGPROB_THRESHOLD,
+    Transcriber,
+    TranscribeResult,
+    temperature_schedule,
+)
 from whisper_wrapper.schemas import Segment, WordTiming
 
 
@@ -25,7 +31,9 @@ class FasterWhisperTranscriber(Transcriber):
             language=language,
             word_timestamps=word_timestamps,
             initial_prompt=initial_prompt,
-            temperature=temperature,
+            temperature=temperature_schedule(temperature),
+            compression_ratio_threshold=COMPRESSION_RATIO_THRESHOLD,
+            log_prob_threshold=LOGPROB_THRESHOLD,
             condition_on_previous_text=False,
             no_speech_threshold=no_speech_threshold,
             vad_filter=False,

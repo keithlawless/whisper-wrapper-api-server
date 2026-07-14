@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from whisper_wrapper.backends.base import Transcriber, TranscribeResult
+from whisper_wrapper.backends.base import (
+    COMPRESSION_RATIO_THRESHOLD,
+    LOGPROB_THRESHOLD,
+    Transcriber,
+    TranscribeResult,
+    temperature_schedule,
+)
 from whisper_wrapper.schemas import Segment, WordTiming
 
 # Maps whisper-wrapper model size names to mlx-community HuggingFace repos.
@@ -31,13 +37,18 @@ class MlxTranscriber(Transcriber):
     ) -> TranscribeResult:
         import mlx_whisper  # lazy import so non-Apple platforms load cleanly
 
+        # mlx-whisper mirrors openai-whisper's API, which names the logprob gate
+        # `logprob_threshold` (no underscore between log/prob) — unlike
+        # faster-whisper's `log_prob_threshold`.
         result = mlx_whisper.transcribe(
             audio,
             path_or_hf_repo=self._repo,
             language=language,
             word_timestamps=word_timestamps,
             initial_prompt=initial_prompt,
-            temperature=temperature,
+            temperature=temperature_schedule(temperature),
+            compression_ratio_threshold=COMPRESSION_RATIO_THRESHOLD,
+            logprob_threshold=LOGPROB_THRESHOLD,
             condition_on_previous_text=False,
             no_speech_threshold=no_speech_threshold,
             verbose=None,
