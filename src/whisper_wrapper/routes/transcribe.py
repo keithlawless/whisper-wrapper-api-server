@@ -15,6 +15,32 @@ from whisper_wrapper.schemas import TranscribeResponse
 router = APIRouter()
 log = get_logger("transcribe")
 
+# Seconds of silence pad_silence() appends so Whisper flushes its last segment.
+# Also the margin past the real audio beyond which any segment must be phantom
+# (see _drop_segments_past).
+_PAD_SILENCE_SEC = 1.0
+
+
+def _drop_segments_past(result, cutoff_sec: float):
+    """Drop segments/words starting at/after cutoff_sec; rebuild text.
+
+    Whisper decode-loop hallucinations emit segments whose timestamps run past
+    the end of the real (padded) audio — a 30s clip producing "Thank you."
+    segments out to 56s. The padded tail is silence, so anything starting
+    beyond it cannot be real speech. Rebuilding text from the survivors keeps
+    the response consistent. Returns (result, dropped_count). This is a
+    decode-parameter-independent backstop: it catches any future loop mode
+    regardless of temperature/threshold settings.
+    """
+    kept = [s for s in result.segments if s.start < cutoff_sec]
+    dropped = len(result.segments) - len(kept)
+    if dropped:
+        result.segments = kept
+        result.text = "".join(s.text for s in kept).strip()
+        if result.words is not None:
+            result.words = [w for w in result.words if w.start < cutoff_sec]
+    return result, dropped
+
 
 def _settings(request: Request) -> Settings:
     return request.app.state.settings
@@ -93,7 +119,7 @@ async def transcribe(
     duration = audio_mod.duration_seconds(decoded)
 
     if pad_silence:
-        decoded = audio_mod.pad_silence(decoded)
+        decoded = audio_mod.pad_silence(decoded, _PAD_SILENCE_SEC)
 
     transcriber = await mgr.get(model_size)
 
@@ -118,6 +144,20 @@ async def transcribe(
             initial_prompt=initial_prompt,
             temperature=temperature,
             no_speech_threshold=no_speech_threshold,
+        )
+
+    # Backstop against decode-loop hallucinations whose timestamps run past the
+    # end of the real audio. Real speech ends by `duration`; the padded tail is
+    # silence, so any segment starting beyond it is phantom.
+    cutoff_sec = duration + (_PAD_SILENCE_SEC if pad_silence else 0.0)
+    result, dropped = _drop_segments_past(result, cutoff_sec)
+    if dropped:
+        log.warning(
+            "dropped_hallucinated_segments_past_audio",
+            model=model_size,
+            dropped=dropped,
+            cutoff_sec=round(cutoff_sec, 2),
+            request_id=request_id,
         )
 
     log.info(
